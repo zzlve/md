@@ -1,33 +1,33 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
-import config from '../scripts/config';
-import WxRenderer from '../scripts/renderers/wx-renderer'
+import config from '../assets/scripts/config';
+import WxRenderer from '../assets/scripts/renderers/wx-renderer'
 import marked from 'marked'
 import CodeMirror from 'codemirror/lib/codemirror'
-import DEFAULT_CONTENT from '../scripts/default-content'
-import DEFAULT_CSS_CONTENT from '../scripts/themes/default-theme-css'
+import DEFAULT_CONTENT from '../assets/scripts/default-content'
+import DEFAULT_CSS_CONTENT from '../assets/scripts/themes/default-theme-css'
 import {
-    setColor
-} from '../scripts/util'
+    setColor,
+    formatDoc
+} from '../assets/scripts/util'
 
 Vue.use(Vuex)
 
 const state = {
     wxRenderer: null,
     output: '',
+    html: '',
     editor: null,
     cssEditor: null,
-    html: '',
     currentFont: '',
     currentSize: '',
     currentColor: '',
     citeStatus: 0,
-    nightMode: false
+    nightMode: false,
+    codeTheme: 'github',
+    rightClickMenuVisible: false
 };
 const mutations = {
-    setHtml(state, data) {
-        state.html = data;
-    },
     setEditorValue(state, data) {
         state.editor.setValue(data)
     },
@@ -53,6 +53,13 @@ const mutations = {
         state.currentColor = data;
         localStorage.setItem('color', data)
     },
+    setCurrentCodeTheme(state, data) {
+        state.codeTheme = data;
+        localStorage.setItem('codeTheme', data)
+    },
+    setRightClickMenuVisible(state, data) {
+        state.rightClickMenuVisible = data;
+    },
     themeChanged(state) {
         state.nightMode = !state.nightMode;
     },
@@ -60,6 +67,7 @@ const mutations = {
         state.currentFont = localStorage.getItem('fonts') || config.builtinFonts[0].value
         state.currentColor = localStorage.getItem('color') || config.colorOption[1].value
         state.currentSize = localStorage.getItem('size') || config.sizeOption[2].value
+        state.codeTheme = localStorage.getItem('codeTheme') || config.codeThemeOption[0].value
         state.citeStatus = localStorage.getItem('citeStatus') === 'true'
         state.wxRenderer = new WxRenderer({
             theme: setColor(state.currentColor),
@@ -70,23 +78,26 @@ const mutations = {
     },
     initEditorEntity(state) {
         state.editor = CodeMirror.fromTextArea(
-            document.getElementById('editor'), 
-            {
+            document.getElementById('editor'), {
                 value: '',
                 mode: 'text/x-markdown',
                 theme: 'xq-light',
                 lineNumbers: false,
                 lineWrapping: true,
                 styleActiveLine: true,
-                autoCloseBrackets: true
+                autoCloseBrackets: true,
+                extraKeys: {
+                    'Ctrl-F': function autoFormat(editor) {
+                        const doc = formatDoc(editor.getValue(0))
+                        localStorage.setItem('__editor_content', doc)
+                        editor.setValue(doc)
+                    }
+                }
             }
         )
+        
         // 如果有编辑器内容被保存则读取，否则加载默认内容
-        if (localStorage.getItem('__editor_content')) {
-            state.editor.setValue(localStorage.getItem('__editor_content'))
-        } else {
-            state.editor.setValue(DEFAULT_CONTENT)
-        }
+        state.editor.setValue(localStorage.getItem('__editor_content') || formatDoc(DEFAULT_CONTENT))
     },
     initCssEditorEntity(state) {
         state.cssEditor = CodeMirror.fromTextArea(
@@ -99,10 +110,9 @@ const mutations = {
                 matchBrackets: true,
                 autofocus: true,
                 extraKeys: {
-                'Ctrl-F': function autoFormat(editor) {
-                    const totalLines = editor.lineCount()
-
-                    editor.autoFormatRange({
+                    'Ctrl-F': function autoFormat(editor) {
+                        const totalLines = editor.lineCount()
+                        editor.autoFormatRange({
                             line: 0,
                             ch: 0
                         }, {
@@ -114,11 +124,7 @@ const mutations = {
         )
 
         // 如果有编辑器内容被保存则读取，否则加载默认内容
-        if (localStorage.getItem('__css_content')) {
-            state.cssEditor.setValue(localStorage.getItem('__css_content'))
-        } else {
-            state.cssEditor.setValue(DEFAULT_CSS_CONTENT)
-        }
+        state.cssEditor.setValue(localStorage.getItem('__css_content') || DEFAULT_CSS_CONTENT)
     },
     editorRefresh(state) {
         let output = marked(state.editor.getValue(0), {
@@ -135,7 +141,8 @@ const mutations = {
         state.output = output
     },
     clearEditorToDefault(state) {
-        state.editor.setValue(DEFAULT_CONTENT)
+        const doc = formatDoc(DEFAULT_CONTENT)
+        state.editor.setValue(doc)
         state.cssEditor.setValue(DEFAULT_CSS_CONTENT)
     }
 }
